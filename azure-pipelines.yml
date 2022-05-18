@@ -1,0 +1,69 @@
+# Starter pipeline
+# Start with a minimal pipeline that you can customize to build and deploy your code.
+# Add steps that build, run tests, deploy, and more:
+# https://aka.ms/yaml
+
+trigger:
+- develop
+
+variables:
+  databricks.host: 'https://adb-8256961986085813.13.azuredatabricks.net'
+  databricks.cluster.name.gp : 'project_quantum'
+  databricks.cluster.name.ml : 'project_quantum_ml'
+  databricks.job.name : 'create_jobs_los'
+
+pool:
+  vmImage: ubuntu-latest
+
+steps:
+- script: echo Started the Build Pipeline!
+  displayName: 'Run a one-line script'
+
+# Downloading a particular Python Version
+- task: UsePythonVersion@0
+  displayName: 'Use Latest Python Version-3.8'
+  inputs:
+    versionSpec: '3.8'
+    addToPath: true
+    architecture: 'x64'
+
+# Installing Databricks CLI for running its commands
+- task: Bash@3
+  displayName : 'Install Databricks CLI'
+  inputs:
+    targetType: 'inline'
+    script: 'pip install -U databricks-cli pytest pyspark'
+
+# Configuring the Databricks CLI with Authentication Token
+- task: Bash@3
+  displayName: 'Configure Databricks CLI and some other tools'
+  inputs:
+    targetType: 'inline'
+    script: |
+      conf='cat << EOM
+      $(databricks.host)
+      $(databricks.token)
+      EOM'
+      echo "$conf" | databricks configure --token
+
+# Creating a job for running the create jobs job
+- task: Bash@3
+  displayName: 'Run Create Jobs Job'
+  inputs:
+    targetType: 'inline'
+    script: |
+
+      # Getting the job id corresponding to the job name 
+      job_id=$(databricks jobs list | grep -w $(databricks.job.name) | awk {'print $1'})
+
+      # Running the job created for training
+      echo "Running job with Job Name : $(databricks.job.name) with Job Id : $job_id"
+
+      create_job_params=$(jq --null-input \
+      --arg gp_cluster $(databricks.cluster.name.gp) \
+      --arg ml_cluster $(databricks.cluster.name.ml) \
+      '{"gp_cluster": $gp_cluster, "ml_cluster": $ml_cluster}')
+
+      echo "Job Parameters : $create_job_params"
+      run_id=$(databricks jobs run-now --job-id $job_id --notebook-params "$create_job_params" | jq -r ".run_id")
+      
